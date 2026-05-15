@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🛡️ DEFENDER HQ - DDoS SENTINEL</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; background: #000510; color: #fff; }
+        @keyframes alertPulse { 50% { border-color: #ef4444; box-shadow: 0 0 15px rgba(239,68,68,0.4); } }
+        .attacker-row { animation: alertPulse 2s infinite; }
+    </style>
+</head>
+<body class="p-6 md:p-10">
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-8 pb-6 border-b border-blue-900">
+        <div>
+            <h1 class="text-4xl font-black text-blue-500">🛡️ DEFENDER HQ</h1>
+            <a href="/" class="text-blue-700 text-sm hover:text-blue-400">← Battle Station</a>
+        </div>
+        <div class="bg-blue-950 border border-blue-800 px-4 py-2 rounded-full text-blue-400 text-sm font-mono">
+            THREAT MONITORING ACTIVE
+        </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="grid grid-cols-3 gap-4 mb-6">
+        <div class="bg-blue-950/30 border border-blue-900/50 rounded-2xl p-5 text-center">
+            <div class="text-blue-400 text-xs uppercase tracking-wider mb-2">Total Requests</div>
+            <div class="text-4xl font-black text-green-400" id="total-requests">0</div>
+        </div>
+        <div class="bg-blue-950/30 border border-blue-900/50 rounded-2xl p-5 text-center">
+            <div class="text-blue-400 text-xs uppercase tracking-wider mb-2">Current RPS</div>
+            <div class="text-4xl font-black" id="current-rps">0</div>
+        </div>
+        <div class="bg-blue-950/30 border border-blue-900/50 rounded-2xl p-5 text-center">
+            <div class="text-blue-400 text-xs uppercase tracking-wider mb-2">Blocked IPs</div>
+            <div class="text-4xl font-black text-red-400" id="blocked-count">0</div>
+        </div>
+    </div>
+
+    <!-- Threat Level -->
+    <div class="bg-blue-950/30 border border-blue-900/50 rounded-2xl p-5 mb-6 text-center">
+        <div class="text-blue-400 text-xs uppercase tracking-wider mb-2">Threat Level</div>
+        <div class="text-3xl font-black" id="threat-level">🟢 NORMAL</div>
+    </div>
+
+    <!-- Connected IPs -->
+    <div class="bg-blue-950/30 border border-blue-900/50 rounded-2xl p-6 mb-6">
+        <h2 class="text-blue-400 text-sm font-semibold uppercase tracking-wider mb-4">🌐 Connected IPs</h2>
+        <div id="ip-list" class="space-y-3"></div>
+    </div>
+
+    <!-- Blocked IPs -->
+    <div class="bg-blue-950/30 border border-blue-900/50 rounded-2xl p-6 mb-6">
+        <h2 class="text-blue-400 text-sm font-semibold uppercase tracking-wider mb-4">🚫 Blocked IPs</h2>
+        <div id="blocked-list" class="text-blue-500/50 text-sm"></div>
+    </div>
+
+    <!-- Alerts -->
+    <div class="bg-blue-950/30 border border-blue-900/50 rounded-2xl p-6">
+        <h2 class="text-blue-400 text-sm font-semibold uppercase tracking-wider mb-4">⚠️ Security Alerts</h2>
+        <div id="alert-feed" class="text-xs font-mono max-h-64 overflow-y-auto space-y-2"></div>
+    </div>
+
+    <script>
+        let ws;
+        
+        function connectWS() {
+            ws = new WebSocket(`ws://${location.host}/ws`);
+            ws.onmessage = (e) => {
+                const msg = JSON.parse(e.data);
+                if (msg.type === 'state_update') {
+                    updateUI(msg.data);
+                }
+            };
+        }
+        
+        function updateUI(data) {
+            document.getElementById('total-requests').textContent = data.total_requests;
+            
+            const rpsEl = document.getElementById('current-rps');
+            rpsEl.textContent = data.current_rps;
+            rpsEl.className = 'text-4xl font-black ' + 
+                (data.current_rps > 100 ? 'text-red-400' : data.current_rps > 30 ? 'text-yellow-400' : 'text-green-400');
+            
+            document.getElementById('blocked-count').textContent = data.blocked_count;
+            
+            const threatEl = document.getElementById('threat-level');
+            if (data.threat_level === 'CRITICAL') threatEl.innerHTML = '🔴 CRITICAL';
+            else if (data.threat_level === 'SUSPICIOUS') threatEl.innerHTML = '🟡 SUSPICIOUS';
+            else threatEl.innerHTML = '🟢 NORMAL';
+            
+            // IP List
+            if (data.connected_ips && data.connected_ips.length > 0) {
+                let html = '';
+                data.connected_ips.forEach(ip => {
+                    const rowClass = ip.blocked ? 'opacity-50' : ip.is_attacker ? 'attacker-row' : '';
+                    const action = ip.blocked
+                        ? `<button onclick="unblockIP('${ip.ip}')" class="bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-4 rounded-lg text-sm">UNBLOCK</button>`
+                        : `<button onclick="blockIP('${ip.ip}')" class="bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-4 rounded-lg text-sm">BLOCK</button>`;
+                    
+                    html += `<div class="flex justify-between items-center p-4 bg-blue-950/50 border ${ip.is_attacker ? 'border-red-800' : 'border-blue-900/50'} rounded-xl ${rowClass}">
+                        <div>
+                            <div class="font-bold">${ip.blocked ? '🚫' : ip.is_attacker ? '⚠️' : '✅'} ${ip.ip}</div>
+                            <div class="text-blue-500/50 text-xs">RPS: ${ip.rps} | ${ip.last_seen} ${ip.is_attacker ? '| THREAT' : ''}</div>
+                        </div>
+                        ${action}
+                    </div>`;
+                });
+                document.getElementById('ip-list').innerHTML = html;
+            }
+            
+            // Blocked list
+            if (data.blocked_ips && data.blocked_ips.length > 0) {
+                document.getElementById('blocked-list').innerHTML = data.blocked_ips.map(ip =>
+                    `<div class="flex justify-between items-center p-3 bg-blue-950/50 border border-blue-900/50 rounded-lg mb-2 opacity-60">
+                        <span class="font-mono">🚫 ${ip}</span>
+                        <button onclick="unblockIP('${ip}')" class="text-green-400 hover:text-green-300 text-sm font-bold">UNBLOCK</button>
+                    </div>`
+                ).join('');
+            } else {
+                document.getElementById('blocked-list').innerHTML = '<p>No IPs blocked</p>';
+            }
+            
+            // Alerts
+            if (data.alerts && data.alerts.length > 0) {
+                document.getElementById('alert-feed').innerHTML = data.alerts.slice(-20).reverse().map(a => {
+                    const cls = a.message.includes('BLOCKED') ? 'text-red-400 border-l-red-500' :
+                               a.message.includes('UNBLOCKED') ? 'text-green-400 border-l-green-500' :
+                               'text-blue-400 border-l-blue-500';
+                    return `<div class="border-l-4 ${cls} pl-3 py-1 bg-blue-950/30">[${a.time}] ${a.message}</div>`;
+                }).join('');
+            }
+        }
+        
+        function blockIP(ip) {
+            fetch('/api/defense/block', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ip})
+            });
+        }
+        
+        function unblockIP(ip) {
+            fetch('/api/defense/unblock', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ip})
+            });
+        }
+        
+        connectWS();
+    </script>
+</body>
+</html>

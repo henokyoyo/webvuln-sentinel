@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DDoS SENTINEL - Battle Station</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; background: #06060e; color: #fff; }
+        .glow-red { box-shadow: 0 0 40px rgba(239,68,68,0.3); }
+        .glow-blue { box-shadow: 0 0 40px rgba(59,130,246,0.3); }
+        .card:hover { transform: translateY(-8px); }
+        .card { transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-6">
+    <div class="text-center max-w-4xl">
+        <!-- Logo -->
+        <div class="mb-4">
+            <span class="text-6xl">⚔️</span>
+        </div>
+        <h1 class="text-6xl font-black mb-2 bg-gradient-to-r from-red-500 via-orange-500 to-red-400 bg-clip-text text-transparent">
+            DDoS SENTINEL
+        </h1>
+        <p class="text-gray-500 text-sm tracking-widest uppercase mb-12">Cyber Warfare Simulation Platform v2.0</p>
+        
+        <!-- Cards -->
+        <div class="grid md:grid-cols-2 gap-8">
+            <!-- Attacker Card -->
+            <a href="/attack" class="card block bg-gradient-to-br from-red-950 to-red-900 border-2 border-red-800 rounded-2xl p-10 hover:glow-red">
+                <div class="text-7xl mb-6">💥</div>
+                <h2 class="text-3xl font-bold text-red-400 mb-3">ATTACKER HQ</h2>
+                <p class="text-red-300/60 mb-6">Launch DDoS attacks, control intensity, monitor mission progress</p>
+                <span class="inline-block bg-red-600 hover:bg-red-500 text-white font-bold py-3 px-8 rounded-xl text-sm tracking-wider uppercase transition-all">
+                    Join Attack →
+                </span>
+            </a>
+            
+            <!-- Defender Card -->
+            <a href="/defend" class="card block bg-gradient-to-br from-blue-950 to-blue-900 border-2 border-blue-800 rounded-2xl p-10 hover:glow-blue">
+                <div class="text-7xl mb-6">🛡️</div>
+                <h2 class="text-3xl font-bold text-blue-400 mb-3">DEFENDER HQ</h2>
+                <p class="text-blue-300/60 mb-6">Monitor traffic, detect threats, block malicious IPs in real-time</p>
+                <span class="inline-block bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-8 rounded-xl text-sm tracking-wider uppercase transition-all">
+                    Join Defense →
+                </span>
+            </a>
+        </div>
+        
+        <!-- Footer -->
+        <p class="text-gray-700 text-xs mt-12">Built for CRYPTEN • Cyber Defense Operations • Educational Use Only</p>
+    </div>
+</body>
+</html>

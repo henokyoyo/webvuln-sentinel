@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>💥 ATTACKER HQ - DDoS SENTINEL</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; background: #0a0005; color: #fff; }
+        .stat-value { font-size: 3rem; font-weight: 900; }
+        .btn-launch { background: linear-gradient(135deg, #ef4444, #dc2626); transition: all 0.3s; }
+        .btn-launch:hover:not(:disabled) { transform: scale(1.05); box-shadow: 0 0 40px rgba(239,68,68,0.6); }
+        .btn-launch:disabled { opacity: 0.3; cursor: not-allowed; }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+        .pulse { animation: pulse 2s infinite; }
+    </style>
+</head>
+<body class="p-6 md:p-10">
+    <!-- BLOCKED OVERLAY -->
+    <div id="blocked-overlay" class="hidden fixed inset-0 bg-red-600/95 z-50 flex items-center justify-center text-center p-8">
+        <div>
+            <div class="text-8xl mb-6">🚫</div>
+            <h1 class="text-6xl font-black text-white mb-4">BLOCKED!</h1>
+            <p class="text-xl text-red-100">Your IP has been blocked by the defender.</p>
+            <p class="text-red-200 mt-2">Attack stopped. Waiting for unblock...</p>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-8 pb-6 border-b border-red-900">
+        <div>
+            <h1 class="text-4xl font-black text-red-500">💥 ATTACKER HQ</h1>
+            <a href="/" class="text-red-700 text-sm hover:text-red-400">← Battle Station</a>
+        </div>
+        <div id="ip-badge" class="bg-red-950 border border-red-800 px-4 py-2 rounded-full text-red-400 text-sm font-mono">
+            IP: Loading...
+        </div>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-6 mb-6">
+        <!-- Config -->
+        <div class="bg-red-950/30 border border-red-900/50 rounded-2xl p-6">
+            <h2 class="text-red-400 text-sm font-semibold uppercase tracking-wider mb-4">⚡ Attack Config</h2>
+            
+            <label class="text-red-300/60 text-xs uppercase tracking-wider mb-1 block">Mode</label>
+            <select id="attack-mode" class="w-full bg-red-950 border border-red-800 text-red-300 rounded-lg p-3 mb-3 focus:outline-none focus:border-red-500">
+                <option value="http_flood">HTTP Flood</option>
+                <option value="slowloris">Slowloris Style</option>
+                <option value="multi_page">Multi-Page Assault</option>
+            </select>
+            
+            <label class="text-red-300/60 text-xs uppercase tracking-wider mb-1 block">Threads</label>
+            <input type="number" id="threads" value="100" min="10" max="500" class="w-full bg-red-950 border border-red-800 text-red-300 rounded-lg p-3 mb-4 focus:outline-none focus:border-red-500">
+            
+            <button id="btn-launch" onclick="launchAttack()" class="btn-launch w-full py-4 rounded-xl font-bold text-lg text-white mb-2">
+                💥 LAUNCH ATTACK
+            </button>
+            <button onclick="stopAttack()" class="w-full py-3 rounded-xl font-bold text-red-400 border-2 border-red-800 hover:bg-red-900/50 transition-all">
+                🛑 STOP ATTACK
+            </button>
+        </div>
+
+        <!-- Stats -->
+        <div class="bg-red-950/30 border border-red-900/50 rounded-2xl p-6">
+            <h2 class="text-red-400 text-sm font-semibold uppercase tracking-wider mb-4">📊 Stats</h2>
+            <div class="stat-value text-red-400" id="attack-rps">0</div>
+            <div class="text-red-600 text-xs uppercase tracking-wider mb-6">Requests/Second</div>
+            
+            <div class="stat-value text-red-300 text-4xl" id="attack-total">0</div>
+            <div class="text-red-600 text-xs uppercase tracking-wider mb-6">Total Requests</div>
+            
+            <div id="attack-status" class="text-green-400 font-semibold">● READY</div>
+        </div>
+    </div>
+
+    <!-- Progress -->
+    <div class="bg-red-950/30 border border-red-900/50 rounded-2xl p-6 mb-6">
+        <h2 class="text-red-400 text-sm font-semibold uppercase tracking-wider mb-4">📈 Progress</h2>
+        <div class="h-2 bg-red-950 rounded-full overflow-hidden">
+            <div id="progress-bar" class="h-full bg-gradient-to-r from-red-600 to-red-400 rounded-full transition-all duration-300" style="width:0%"></div>
+        </div>
+        <p id="progress-text" class="text-red-600 text-xs text-center mt-2">Waiting for launch...</p>
+    </div>
+
+    <!-- Log -->
+    <div class="bg-red-950/30 border border-red-900/50 rounded-2xl p-6">
+        <h2 class="text-red-400 text-sm font-semibold uppercase tracking-wider mb-4">📋 Mission Log</h2>
+        <div id="mission-log" class="text-red-500/60 text-xs font-mono max-h-48 overflow-y-auto space-y-1"></div>
+    </div>
+
+    <script>
+        let attackRunning = false;
+        let ws;
+        
+        function connectWS() {
+            ws = new WebSocket(`ws://${location.host}/ws`);
+            ws.onmessage = (e) => {
+                const msg = JSON.parse(e.data);
+                if (msg.type === 'state_update') {
+                    document.getElementById('attack-rps').textContent = msg.data.current_rps;
+                    document.getElementById('attack-total').textContent = msg.data.total_requests;
+                }
+            };
+        }
+        
+        fetch('/api/my-ip').then(r => r.json()).then(d => {
+            document.getElementById('ip-badge').textContent = 'IP: ' + d.ip;
+            setInterval(() => {
+                fetch('/api/my-ip').then(r => r.json()).then(d => {
+                    const overlay = document.getElementById('blocked-overlay');
+                    if (d.blocked) {
+                        overlay.classList.remove('hidden');
+                        if (attackRunning) stopAttackSilent();
+                    } else {
+                        overlay.classList.add('hidden');
+                    }
+                });
+            }, 1000);
+        });
+        
+        function launchAttack() {
+            if (attackRunning) return;
+            const mode = document.getElementById('attack-mode').value;
+            const threads = parseInt(document.getElementById('threads').value);
+            
+            fetch('/api/attack/start', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({mode, threads})
+            }).then(r => r.json()).then(d => {
+                attackRunning = true;
+                document.getElementById('btn-launch').disabled = true;
+                document.getElementById('attack-status').innerHTML = '🔴 ATTACKING';
+                document.getElementById('attack-status').className = 'text-red-400 pulse font-semibold';
+                document.getElementById('progress-bar').style.width = '100%';
+                document.getElementById('progress-text').textContent = 'Continuous attack...';
+                addLog('💥 Attack launched: ' + mode + ' | ' + threads + ' threads');
+                addLog('⚠️ Attack continues until defender blocks you!');
+            });
+        }
+        
+        function stopAttack() {
+            fetch('/api/attack/stop', {method: 'POST'}).then(() => {
+                attackRunning = false;
+                document.getElementById('btn-launch').disabled = false;
+                document.getElementById('attack-status').innerHTML = '● STOPPED';
+                document.getElementById('attack-status').className = 'text-yellow-400 font-semibold';
+                document.getElementById('progress-bar').style.width = '0%';
+                document.getElementById('progress-text').textContent = 'Attack stopped';
+                addLog('🛑 Attack stopped');
+            });
+        }
+        
+        function stopAttackSilent() {
+            attackRunning = false;
+            document.getElementById('btn-launch').disabled = false;
+            document.getElementById('attack-status').innerHTML = '● BLOCKED';
+            document.getElementById('attack-status').className = 'text-red-600 font-semibold';
+            document.getElementById('progress-bar').style.width = '0%';
+            document.getElementById('progress-text').textContent = 'Blocked by defender';
+            addLog('🚫 Blocked by defender!');
+        }
+        
+        function addLog(msg) {
+            const log = document.getElementById('mission-log');
+            const time = new Date().toLocaleTimeString();
+            log.innerHTML = `<div>[${time}] ${msg}</div>` + log.innerHTML;
+        }
+        
+        connectWS();
+    </script>
+</body>
+</html>
