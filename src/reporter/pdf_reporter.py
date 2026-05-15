@@ -12,10 +12,10 @@ console = Console()
 class PDFReporter:
     def __init__(self, target_url, findings, port_results=None):
         self.target_url = target_url
-        self.findings = findings
-        self.port_results = port_results or []
+        self.findings = findings if findings else []
+        self.port_results = port_results if port_results else []
         self.pdf = FPDF()
-        self.pdf.set_auto_page_break(auto=True, margin=15)
+        self.pdf.set_auto_page_break(auto=True, margin=20)
         
     def generate(self, filename=None):
         """Generate the PDF report"""
@@ -32,12 +32,21 @@ class PDFReporter:
         # Add pages
         self._add_cover_page()
         self._add_executive_summary()
-        self._add_port_scan_results()
-        self._add_vulnerability_details()
-        self._add_remediation_summary()
+        
+        if self.port_results:
+            self._add_port_scan_results()
+            
+        if self.findings:
+            self._add_vulnerability_details()
+            self._add_remediation_summary()
+        else:
+            self._add_no_findings()
+            
         self._add_footer()
         
         # Save
+        import os
+        os.makedirs("reports", exist_ok=True)
         self.pdf.output(filename)
         console.print(f"[green][+] Report saved: {filename}[/green]")
         return filename
@@ -80,22 +89,48 @@ class PDFReporter:
                 severity_counts[sev] += 1
         
         self.pdf.set_font('Helvetica', '', 11)
-        self.pdf.multi_cell(0, 6, 
+        
+        summary_text = (
             f'A security assessment was performed against {self.target_url} '
             f'on {datetime.now().strftime("%B %d, %Y")}. '
-            f'The assessment identified a total of {len(self.findings)} security findings.\n'
         )
+        
+        if self.findings:
+            summary_text += (
+                f'The assessment identified a total of {len(self.findings)} security finding(s). '
+            )
+        else:
+            summary_text += 'No vulnerabilities were detected during the scan. '
+            
+        self.pdf.multi_cell(0, 6, summary_text)
+        self.pdf.ln(5)
         
         self.pdf.set_font('Helvetica', 'B', 12)
         self.pdf.cell(0, 8, 'Finding Summary:', ln=True)
         self.pdf.set_font('Helvetica', '', 11)
         
-        for severity, count in severity_counts.items():
-            if count > 0:
-                self.pdf.cell(0, 6, f'  - {severity}: {count} finding(s)', ln=True)
-        
-        if len(self.findings) == 0:
+        if any(severity_counts.values()):
+            for severity, count in severity_counts.items():
+                if count > 0:
+                    self.pdf.cell(0, 6, f'  - {severity}: {count} finding(s)', ln=True)
+        else:
             self.pdf.cell(0, 6, '  No vulnerabilities detected.', ln=True)
+            
+        # Add risk score if findings exist
+        if self.findings:
+            risk_score = self._calculate_risk()
+            self.pdf.ln(5)
+            self.pdf.set_font('Helvetica', 'B', 12)
+            self.pdf.cell(0, 8, f'Overall Risk Score: {risk_score}/100', ln=True)
+    
+    def _calculate_risk(self):
+        """Calculate risk score"""
+        weights = {'Critical': 25, 'High': 15, 'Medium': 7, 'Low': 2}
+        total = 0
+        for finding in self.findings:
+            sev = finding.get('severity', 'Low')
+            total += weights.get(sev, 1)
+        return min(total, 100)
     
     def _add_port_scan_results(self):
         """Add port scan results"""
@@ -107,7 +142,7 @@ class PDFReporter:
         
         if not self.port_results:
             self.pdf.set_font('Helvetica', '', 11)
-            self.pdf.cell(0, 8, 'No open ports found or port scan was not performed.', ln=True)
+            self.pdf.cell(0, 8, 'No open ports found.', ln=True)
             return
         
         self.pdf.set_font('Helvetica', '', 11)
@@ -118,20 +153,32 @@ class PDFReporter:
         self.pdf.set_font('Helvetica', 'B', 10)
         self.pdf.set_fill_color(50, 50, 50)
         self.pdf.set_text_color(255, 255, 255)
-        self.pdf.cell(25, 8, 'Port', border=1, fill=True)
-        self.pdf.cell(25, 8, 'Protocol', border=1, fill=True)
-        self.pdf.cell(50, 8, 'Service', border=1, fill=True)
-        self.pdf.cell(60, 8, 'Product', border=1, fill=True)
+        
+        col_widths = [25, 30, 55, 70]
+        headers = ['Port', 'Protocol', 'Service', 'Product']
+        
+        for i, header in enumerate(headers):
+            self.pdf.cell(col_widths[i], 8, header, border=1, fill=True)
         self.pdf.ln()
         
         # Table rows
         self.pdf.set_text_color(0, 0, 0)
-        self.pdf.set_font('Helvetica', '', 10)
+        self.pdf.set_font('Helvetica', '', 9)
+        
         for port in self.port_results:
-            self.pdf.cell(25, 7, str(port.get('port', '')), border=1)
-            self.pdf.cell(25, 7, port.get('protocol', ''), border=1)
-            self.pdf.cell(50, 7, port.get('service', ''), border=1)
-            self.pdf.cell(60, 7, port.get('product', '')[:25], border=1)
+            row_data = [
+                str(port.get('port', '')),
+                port.get('protocol', ''),
+                port.get('service', ''),
+                (port.get('product', '') or 'Unknown')[:30]
+            ]
+            
+            # Check page break
+            if self.pdf.get_y() > 260:
+                self.pdf.add_page()
+            
+            for i, data in enumerate(row_data):
+                self.pdf.cell(col_widths[i], 7, data, border=1)
             self.pdf.ln()
     
     def _add_vulnerability_details(self):
@@ -148,84 +195,101 @@ class PDFReporter:
             return
         
         for i, finding in enumerate(self.findings, 1):
-            # Check if we need a new page
-            if self.pdf.get_y() > 240:
-                self.pdf.add_page()
+            severity = finding.get('severity', 'Low')
             
             # Severity color
-            severity = finding.get('severity', 'Low')
             if severity == 'Critical':
-                self.pdf.set_text_color(255, 0, 0)
+                self.pdf.set_text_color(200, 0, 0)
             elif severity == 'High':
-                self.pdf.set_text_color(255, 100, 0)
+                self.pdf.set_text_color(220, 80, 0)
             elif severity == 'Medium':
-                self.pdf.set_text_color(255, 180, 0)
+                self.pdf.set_text_color(200, 150, 0)
             else:
-                self.pdf.set_text_color(0, 150, 0)
+                self.pdf.set_text_color(0, 130, 0)
             
             # Finding header
-            self.pdf.set_font('Helvetica', 'B', 12)
-            self.pdf.cell(0, 8, f'{i}. [{severity}] {finding.get("type", "Unknown")}', ln=True)
+            self.pdf.set_font('Helvetica', 'B', 11)
+            finding_title = f'{i}. [{severity}] {finding.get("type", "Unknown")}'
+            self.pdf.cell(0, 7, finding_title, ln=True)
             
             # Reset color
             self.pdf.set_text_color(0, 0, 0)
-            self.pdf.set_font('Helvetica', '', 10)
+            self.pdf.set_font('Helvetica', '', 9)
             
             # Description
-            desc = finding.get('description', 'No description available')
+            desc = finding.get('description', 'No description')
+            # Clean description - remove unicode chars that fpdf doesn't like
+            desc = desc.replace('\u2713', '[+]').replace('\u2717', '[-]').replace('\u2013', '-')
             self.pdf.multi_cell(0, 5, f'Description: {desc}')
+            self.pdf.ln(1)
             
             # Remediation
             rem = finding.get('remediation', 'No remediation available')
-            self.pdf.set_font('Helvetica', 'B', 10)
+            rem = rem.replace('\u2713', '[+]').replace('\u2717', '[-]').replace('\u2013', '-')
+            self.pdf.set_font('Helvetica', 'B', 9)
             self.pdf.cell(0, 5, 'Remediation:', ln=True)
-            self.pdf.set_font('Helvetica', '', 10)
-            self.pdf.multi_cell(0, 5, f'{rem}')
+            self.pdf.set_font('Helvetica', '', 9)
+            self.pdf.multi_cell(0, 5, rem)
             
-            self.pdf.ln(3)
+            self.pdf.ln(4)
     
     def _add_remediation_summary(self):
         """Add remediation summary"""
         self.pdf.add_page()
         
         self.pdf.set_font('Helvetica', 'B', 18)
-        self.pdf.cell(0, 12, '4. Remediation Summary', ln=True)
+        self.pdf.cell(0, 12, '4. Remediation Priority', ln=True)
         self.pdf.ln(5)
         
-        self.pdf.set_font('Helvetica', '', 11)
-        self.pdf.multi_cell(0, 6,
+        self.pdf.set_font('Helvetica', '', 10)
+        self.pdf.multi_cell(0, 5,
             'The following section provides a prioritized list of remediation '
-            'actions to address the identified vulnerabilities. Remediations '
-            'are ordered by severity.\n'
+            'actions to address identified vulnerabilities.\n'
         )
         
         # Group by severity
         priorities = {'Critical': [], 'High': [], 'Medium': [], 'Low': []}
         for finding in self.findings:
             sev = finding.get('severity', 'Low')
-            if sev in priorities:
-                priorities[sev].append(finding.get('remediation', ''))
+            rem = finding.get('remediation', '')
+            rem = rem.replace('\u2713', '[+]').replace('\u2717', '[-]')
+            if sev in priorities and rem not in priorities[sev]:
+                priorities[sev].append(rem)
         
+        counter = 1
         for severity, remediations in priorities.items():
             if remediations:
-                self.pdf.set_font('Helvetica', 'B', 12)
-                self.pdf.cell(0, 8, f'{severity} Priority:', ln=True)
-                self.pdf.set_font('Helvetica', '', 10)
-                for j, rem in enumerate(set(remediations), 1):
-                    self.pdf.cell(0, 6, f'  {j}. {rem}', ln=True)
+                self.pdf.set_font('Helvetica', 'B', 11)
+                self.pdf.cell(0, 7, f'{severity} Priority:', ln=True)
+                self.pdf.set_font('Helvetica', '', 9)
+                for rem in remediations:
+                    self.pdf.cell(0, 5, f'  {counter}. {rem}', ln=True)
+                    counter += 1
                 self.pdf.ln(3)
+    
+    def _add_no_findings(self):
+        """Add a page when no findings exist"""
+        self.pdf.add_page()
+        self.pdf.set_font('Helvetica', 'B', 18)
+        self.pdf.cell(0, 12, '3. Scan Results', ln=True)
+        self.pdf.ln(10)
+        self.pdf.set_font('Helvetica', '', 12)
+        self.pdf.cell(0, 8, 'No vulnerabilities were detected during this scan.', ln=True, align='C')
+        self.pdf.ln(5)
+        self.pdf.set_font('Helvetica', 'I', 10)
+        self.pdf.cell(0, 8, 'This is a positive result indicating good security posture.', ln=True, align='C')
     
     def _add_footer(self):
         """Add footer with disclaimer"""
         self.pdf.add_page()
         
-        self.pdf.ln(80)
+        self.pdf.ln(60)
         self.pdf.set_font('Helvetica', 'B', 14)
         self.pdf.cell(0, 10, 'Disclaimer', ln=True, align='C')
-        self.pdf.ln(5)
+        self.pdf.ln(10)
         
         self.pdf.set_font('Helvetica', '', 9)
-        self.pdf.multi_cell(0, 5,
+        disclaimer = (
             'This report is provided for educational and authorized assessment '
             'purposes only. The findings contained within this report are based '
             'on automated scanning techniques and may include false positives. '
@@ -235,3 +299,4 @@ class PDFReporter:
             'written permission to test. Unauthorized scanning of systems is '
             'illegal and unethical.'
         )
+        self.pdf.multi_cell(0, 5, disclaimer)
